@@ -1,0 +1,5 @@
+# Pipecat pinned to the exact commit this bot was built and tested against.
+pipecat-ai[openai,silero,webrtc,runner] @ git+https://github.com/pipecat-ai/pipecat.git@e7a1e2500edecfe5b4f9b895c8b8502dbf6bf4e5
+python-dotenv
+loguru
+httpx

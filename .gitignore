@@ -1,0 +1,7 @@
+# Secrets: the OpenAI key lives here and must never be committed.
+.env
+
+# Local Python environment and caches
+.venv/
+__pycache__/
+*.pyc
