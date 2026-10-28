@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>لمسة | المساعد الصوتي</title>
+<!-- Public address of the hosted bot, used when the page is served from somewhere else (e.g. Vercel). -->
+<meta name="lamsa-bot-url" content="">
 <link rel="icon" type="image/png" href="assets/favicon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -522,10 +524,11 @@
 <script>
 "use strict";
 
-// Address of the running Pipecat bot. Served by the bot itself (/ui/) it uses the same
-// server; opened from elsewhere it defaults to localhost:7860. Override with ?bot=http://host:port
-const BOT_URL = new URLSearchParams(location.search).get("bot")
-  || (location.pathname.startsWith("/ui") ? "" : "http://localhost:7860");
+// Address of the running Pipecat bot, in order: ?bot=https://host, the lamsa-bot-url meta
+// tag, the same server when the bot serves this page itself (/ui/), else localhost:7860.
+const BOT_URL = (new URLSearchParams(location.search).get("bot")
+  || document.querySelector('meta[name="lamsa-bot-url"]').content.trim()
+  || (location.pathname.startsWith("/ui") ? "" : "http://localhost:7860")).replace(/\/+$/, "");
 
 // RTVI protocol the page speaks over the WebRTC data channel.
 const RTVI_LABEL = "rtvi-ai";
@@ -934,7 +937,7 @@ function waitForIce(conn) {
     const done = () => { conn.removeEventListener("icegatheringstatechange", check); resolve(); };
     const check = () => { if (conn.iceGatheringState === "complete") done(); };
     conn.addEventListener("icegatheringstatechange", check);
-    setTimeout(done, 2500);
+    setTimeout(done, 4000);
   });
 }
 
@@ -952,7 +955,20 @@ async function connect() {
     botBuf = new Uint8Array(512);
     micAnalyser = makeAnalyser(micStream);
 
-    pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
+    // The bot's /start hands out the STUN/TURN servers it uses itself, so a hosted bot
+    // behind a relay is reachable from any network.
+    const start = await fetch(`${BOT_URL}/start`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ transport: "webrtc", enableDefaultIceServers: true }),
+    });
+    if (!start.ok) throw new Error("server");
+    const { iceConfig } = await start.json();
+    const iceServers = (iceConfig && iceConfig.iceServers && iceConfig.iceServers.length)
+      ? iceConfig.iceServers
+      : [{ urls: "stun:stun.l.google.com:19302" }];
+
+    pc = new RTCPeerConnection({ iceServers });
     micStream.getAudioTracks().forEach((track) => pc.addTrack(track, micStream));
 
     // The bot sends what each side says over this channel as RTVI messages.
