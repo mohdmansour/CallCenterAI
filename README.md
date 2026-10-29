@@ -25,6 +25,7 @@ An Arabic voice assistant for **Lamsa (لمسة)**, a design and digital-marketi
 | `test_knowledge.py` | Text-only check of the assistant's answers, no microphone needed |
 | `lamsa-brand.md` | Brand brief: colours, typography, voice |
 | `marketing/` | Social media post and story images |
+| `turn_fix.py` | Lets the bot receive audio relayed through a TURN server |
 | `Dockerfile` | Builds the bot for hosting (Railway or any Docker host) |
 | `vercel.json` | Publishes the `ui/` folder on Vercel |
 

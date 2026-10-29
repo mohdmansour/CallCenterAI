@@ -27,6 +27,8 @@ from pipecat.services.openai.llm import OpenAILLMService
 from pipecat.transports.base_transport import BaseTransport, TransportParams
 from pipecat.workers.runner import WorkerRunner
 
+import turn_fix  # noqa: F401  (lets calls connect through a TURN relay)
+
 load_dotenv(override=True)
 
 # The company knowledge base is a plain text file next to this script.
