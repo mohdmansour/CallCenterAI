@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>لمسة | المساعد الصوتي</title>
 <!-- Public address of the hosted bot, used when the page is served from somewhere else (e.g. Vercel). -->
-<meta name="lamsa-bot-url" content="">
+<meta name="lamsa-bot-url" content="https://callcenterai-sc2d.onrender.com">
 <link rel="icon" type="image/png" href="assets/favicon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -524,11 +524,12 @@
 <script>
 "use strict";
 
-// Address of the running Pipecat bot, in order: ?bot=https://host, the lamsa-bot-url meta
-// tag, the same server when the bot serves this page itself (/ui/), else localhost:7860.
+// Address of the running Pipecat bot, in order: ?bot=https://host, the same server when the
+// bot serves this page itself (/ui/), the lamsa-bot-url meta tag, else localhost:7860.
 const BOT_URL = (new URLSearchParams(location.search).get("bot")
+  || (location.pathname.startsWith("/ui") ? location.origin : "")
   || document.querySelector('meta[name="lamsa-bot-url"]').content.trim()
-  || (location.pathname.startsWith("/ui") ? "" : "http://localhost:7860")).replace(/\/+$/, "");
+  || "http://localhost:7860").replace(/\/+$/, "");
 
 // RTVI protocol the page speaks over the WebRTC data channel.
 const RTVI_LABEL = "rtvi-ai";
