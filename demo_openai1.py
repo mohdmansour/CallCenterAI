@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 from loguru import logger
 
 from call_monitor import CallRecorder
+from knowledge_gaps import KnowledgeGapReporter
 from pipecat.audio.vad.silero import SileroVADAnalyzer
 from pipecat.frames.frames import LLMRunFrame
 from pipecat.pipeline.pipeline import Pipeline
@@ -22,6 +23,7 @@ from pipecat.processors.aggregators.llm_response_universal import (
 )
 from pipecat.runner.types import RunnerArguments
 from pipecat.runner.utils import create_transport
+from pipecat.services.llm_service import FunctionCallParams
 from pipecat.services.openai.stt import OpenAISTTService
 from pipecat.services.openai.tts import OpenAITTSService
 from pipecat.services.openai.llm import OpenAILLMService
@@ -39,6 +41,7 @@ KNOWLEDGE = KNOWLEDGE_PATH.read_text(encoding="utf-8")
 SYSTEM_INSTRUCTION = f"""أنت مساعد صوتي لشركة "لمسة". تتحدث مع العملاء بالعربية بلهجة بسيطة وودودة.
 ردودك تُنطق بصوت عالٍ، لذلك اجعلها قصيرة (جملة إلى ثلاث جمل) وبدون رموز أو قوائم أو إيموجي.
 أجب عن أسئلة العميل اعتماداً على المعلومات التالية فقط. إذا لم تجد الجواب فيها، قل بصراحة إنك لا تملك هذه المعلومة واقترح التواصل مع فريق الشركة، ولا تخترع معلومات.
+عندما يسأل العميل سؤالاً عن الشركة أو خدماتها أو أسعارها أو طريقة عملها ولا تجد جوابه في المعلومات التالية، استدعِ الأداة report_unanswered_question مرة واحدة لهذا السؤال قبل أن ترد، ثم أخبر العميل أنك لا تملك المعلومة. لا تستدعها للتحيات أو الأسئلة البعيدة عن الشركة أو الأسئلة التي أجبت عنها، ولا تذكر الأداة للعميل.
 
 معلومات الشركة:
 {KNOWLEDGE}
@@ -72,7 +75,22 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
     # webhook when the call ends.
     recorder = CallRecorder()
 
-    context = LLMContext()
+    # Sends questions the knowledge base can't answer to the n8n knowledge-gaps
+    # webhook, in the background.
+    gaps = KnowledgeGapReporter(recorder.call_id)
+    last_customer_words = ""
+
+    async def report_unanswered_question(params: FunctionCallParams, question: str, topic: str):
+        """Report a customer question that the company information does not answer.
+
+        Args:
+            question (str): The customer's question, restated clearly in Arabic as one sentence.
+            topic (str): A short Arabic category for the question, such as "الخدمات" or "الأسعار" or "الدوام" or "التواصل".
+        """
+        gaps.report(question, customer_words=last_customer_words, topic=topic)
+        await params.result_callback({"recorded": True})
+
+    context = LLMContext(tools=[report_unanswered_question])
     user_aggregator, assistant_aggregator = LLMContextAggregatorPair(
         context,
         user_params=LLMUserAggregatorParams(vad_analyzer=SileroVADAnalyzer()),
@@ -80,6 +98,8 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
 
     @user_aggregator.event_handler("on_user_turn_stopped")
     async def on_user_turn_stopped(aggregator, strategy, message):
+        nonlocal last_customer_words
+        last_customer_words = message.content or ""
         recorder.add_message("customer", message.content, message.timestamp)
 
     @assistant_aggregator.event_handler("on_assistant_turn_stopped")
@@ -143,6 +163,7 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
         recorder.end_reason = "error"
         raise
     finally:
+        await gaps.flush()
         await recorder.send()
 
 

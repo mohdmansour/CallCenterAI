@@ -8,3 +8,6 @@ __pycache__/
 
 # Calls the n8n webhook could not receive; they hold transcripts.
 failed_calls/
+
+# Unanswered questions the n8n webhook could not receive.
+failed_questions/
