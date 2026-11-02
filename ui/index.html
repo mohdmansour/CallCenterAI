@@ -324,6 +324,11 @@
     scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, .15) transparent;
   }
   dialog[open] { animation: rise .22s ease-out; }
+  .spotlight { animation: spotlight 2.2s ease-out; border-radius: 16px; }
+  @keyframes spotlight {
+    0%, 60% { box-shadow: 0 0 0 2px var(--violet), 0 0 28px rgba(139, 92, 246, .55); }
+    100% { box-shadow: 0 0 0 2px transparent, 0 0 0 transparent; }
+  }
   @keyframes rise { from { opacity: 0; transform: translateY(12px) scale(.98); } }
   dialog::backdrop { background: rgba(4, 3, 10, .6); backdrop-filter: blur(6px); }
   .sheet-head { display: flex; align-items: center; justify-content: space-between; padding: 18px 20px 6px; }
@@ -481,35 +486,35 @@
       </button>
     </div>
     <div class="sheet-body">
-      <div class="field field-row">
+      <div class="field field-row" data-setting="language">
         <div><div class="label" data-i18n="sLang">اللغة</div><div class="desc" data-i18n="sLangDesc">لغة الواجهة</div></div>
         <div class="seg" role="group" aria-label="Language">
           <button type="button" data-lang="ar" aria-pressed="true">عربي</button>
           <button type="button" data-lang="en" aria-pressed="false">EN</button>
         </div>
       </div>
-      <div class="field">
+      <div class="field" data-setting="microphone">
         <div class="label" data-i18n="sMic">الميكروفون</div>
         <div class="desc" data-i18n="sMicDesc">اختر الميكروفون اللي بدك تحكي فيه</div>
         <select class="select" id="micSelect"></select>
       </div>
-      <div class="field">
+      <div class="field" data-setting="volume">
         <div class="field-row"><div class="label" data-i18n="sVolume">صوت المساعد</div><div class="desc" id="volumeValue"></div></div>
         <input class="range" id="volume" type="range" min="0" max="100" step="5">
       </div>
-      <div class="field field-row">
+      <div class="field field-row" data-setting="show_conversation">
         <div><div class="label" data-i18n="sShowChat">إظهار المحادثة</div><div class="desc" data-i18n="sShowChatDesc">لوحة الكلام المكتوب بجانب المساعد</div></div>
         <label class="switch"><input type="checkbox" id="showChat"><span></span></label>
       </div>
-      <div class="field field-row">
+      <div class="field field-row" data-setting="live_captions">
         <div><div class="label" data-i18n="sLive">الكتابة أثناء الكلام</div><div class="desc" data-i18n="sLiveDesc">يظهر كلامك وأنت بتحكي، قبل ما تخلص الجملة</div></div>
         <label class="switch"><input type="checkbox" id="showInterim"><span></span></label>
       </div>
-      <div class="field field-row">
+      <div class="field field-row" data-setting="start_muted">
         <div><div class="label" data-i18n="sStartMuted">ابدأ والميكروفون مكتوم</div><div class="desc" data-i18n="sStartMutedDesc">بتفتح المايك لما تكون جاهز</div></div>
         <label class="switch"><input type="checkbox" id="startMuted"><span></span></label>
       </div>
-      <div class="field">
+      <div class="field" data-setting="conversation_history">
         <div class="label" data-i18n="sChat">سجل المحادثة</div>
         <div class="btn-row">
           <button class="ghost" id="downloadChat2" type="button" data-i18n="download">تنزيل المحادثة</button>
@@ -660,6 +665,7 @@ function applyLang(next) {
   document.querySelectorAll(".msg").forEach((m) => { m.querySelector(".who").textContent = t[m.dataset.role === "user" ? "you" : "bot"]; });
   listMics();
   render();
+  sendUiState();
 }
 
 /* ---------- rendering ---------- */
@@ -709,6 +715,7 @@ function scrollDown(force) {
 
 function newMessage(role) {
   const stick = nearBottom();
+  const first = !els.empty.hidden;
   els.empty.hidden = true;
   const t = I18N[lang];
   const msg = document.createElement("div");
@@ -730,6 +737,7 @@ function newMessage(role) {
   msg.append(avatar, bubble);
   els.messages.append(msg);
   scrollDown(stick);
+  if (first) sendUiState();
   return msg;
 }
 
@@ -807,6 +815,7 @@ function clearTranscript() {
   userTurn = null; botTurn = null; transcript.length = 0;
   els.messages.querySelectorAll(".msg").forEach((m) => m.remove());
   els.empty.hidden = false;
+  sendUiState();
 }
 
 function downloadTranscript() {
@@ -854,6 +863,45 @@ function onRtviMessage(raw) {
       break;
     case "bot-stopped-speaking":
       break;
+    case "server-message":
+      if (d.kind === "screen") onScreenCommand(d);
+      break;
+  }
+}
+
+/* ---------- screen control by voice ---------- */
+// Lamsa moves around the page by sending commands; everything happens in place, since
+// navigating or reloading would end the call. The page reports what it shows after each
+// change so Lamsa's tools know where the customer is.
+function sendUiState() {
+  sendRtvi("client-message", { t: "ui-state", d: {
+    settings_open: els.settings.open, chat_visible: prefs.showChat,
+    has_messages: els.empty.hidden, lang,
+  } });
+}
+function spotlight(el) {
+  if (!el) return;
+  el.scrollIntoView({ behavior: "smooth", block: "center" });
+  el.classList.remove("spotlight");
+  void el.offsetWidth;  // restart the animation when the same element is shown again
+  el.classList.add("spotlight");
+  setTimeout(() => el.classList.remove("spotlight"), 2300);
+}
+function openSettings() {
+  if (els.settings.open) return;
+  listMics();
+  els.settings.showModal();
+  sendUiState();
+}
+function onScreenCommand(d) {
+  switch (d.action) {
+    case "open_settings": openSettings(); spotlight(els.settings.querySelector(".sheet-head")); break;
+    case "close_settings": els.settings.close(); break;
+    case "show_setting": openSettings(); spotlight(els.settings.querySelector(`[data-setting="${CSS.escape(d.setting || "")}"]`)); break;
+    case "show_conversation": if (els.settings.open) els.settings.close(); spotlight(document.querySelector(".card.chat")); break;
+    case "download_conversation": downloadTranscript(); break;
+    case "clear_conversation": clearTranscript(); break;
+    case "change_language": if (d.lang === "ar" || d.lang === "en") applyLang(d.lang); break;
   }
 }
 
@@ -974,7 +1022,10 @@ async function connect() {
 
     // The bot sends what each side says over this channel as RTVI messages.
     dc = pc.createDataChannel("rtvi", { ordered: true });
-    dc.onopen = () => sendRtvi("client-ready", { version: RTVI_VERSION, about: { library: "lamsa-ui", library_version: "1.0.0" } });
+    dc.onopen = () => {
+      sendRtvi("client-ready", { version: RTVI_VERSION, about: { library: "lamsa-ui", library_version: "1.0.0" } });
+      sendUiState();
+    };
     dc.onmessage = (event) => onRtviMessage(event.data);
 
     pc.ontrack = (event) => {
@@ -1041,9 +1092,11 @@ function applyPrefsToControls() {
   els.showInterim.checked = prefs.showInterim;
   els.startMuted.checked = prefs.startMuted;
   document.body.classList.toggle("no-chat", !prefs.showChat);
+  sendUiState();
 }
 
-$("openSettings").addEventListener("click", () => { listMics(); els.settings.showModal(); });
+$("openSettings").addEventListener("click", openSettings);
+els.settings.addEventListener("close", sendUiState);
 $("closeSettings").addEventListener("click", () => els.settings.close());
 els.settings.addEventListener("click", (e) => { if (e.target === els.settings) els.settings.close(); });
 document.querySelectorAll(".seg button").forEach((b) => b.addEventListener("click", () => applyLang(b.dataset.lang)));

@@ -29,6 +29,7 @@ from pipecat.services.openai.tts import OpenAITTSService
 from pipecat.services.openai.llm import OpenAILLMService
 from pipecat.transports.base_transport import BaseTransport, TransportParams
 from pipecat.workers.runner import WorkerRunner
+from ui_control import ScreenController
 
 import turn_fix  # noqa: F401  (lets calls connect through a TURN relay)
 
@@ -42,6 +43,7 @@ SYSTEM_INSTRUCTION = f"""أنت مساعد صوتي لشركة "لمسة". تت�
 ردودك تُنطق بصوت عالٍ، لذلك اجعلها قصيرة (جملة إلى ثلاث جمل) وبدون رموز أو قوائم أو إيموجي.
 أجب عن أسئلة العميل اعتماداً على المعلومات التالية فقط. إذا لم تجد الجواب فيها، قل بصراحة إنك لا تملك هذه المعلومة واقترح التواصل مع فريق الشركة، ولا تخترع معلومات.
 عندما يسأل العميل سؤالاً عن الشركة أو خدماتها أو أسعارها أو طريقة عملها ولا تجد جوابه في المعلومات التالية، استدعِ الأداة report_unanswered_question مرة واحدة لهذا السؤال قبل أن ترد، ثم أخبر العميل أنك لا تملك المعلومة. لا تستدعها للتحيات أو الأسئلة البعيدة عن الشركة أو الأسئلة التي أجبت عنها، ولا تذكر الأداة للعميل.
+عندما يطلب العميل الذهاب إلى جزء من الصفحة أو تتحدث عن جزء منها، استدعِ أداة العرض المناسبة حتى يراه على الشاشة، ثم اتبع الـ hint في نتيجتها.
 
 معلومات الشركة:
 {KNOWLEDGE}
@@ -90,7 +92,10 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
         gaps.report(question, customer_words=last_customer_words, topic=topic)
         await params.result_callback({"recorded": True})
 
-    context = LLMContext(tools=[report_unanswered_question])
+    # Lets the customer move around the page by voice.
+    screen = ScreenController()
+
+    context = LLMContext(tools=[report_unanswered_question, *screen.tools])
     user_aggregator, assistant_aggregator = LLMContextAggregatorPair(
         context,
         user_params=LLMUserAggregatorParams(vad_analyzer=SileroVADAnalyzer()),
@@ -133,6 +138,11 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
     runner = WorkerRunner(handle_sigint=runner_args.handle_sigint)
 
     await runner.add_workers(worker)
+
+    @worker.rtvi.event_handler("on_client_message")
+    async def on_client_message(rtvi, message):
+        if message.type == "ui-state":
+            screen.update(message.data)
 
     @worker.event_handler("on_idle_timeout")
     async def on_idle_timeout(worker):
